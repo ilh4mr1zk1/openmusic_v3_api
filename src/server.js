@@ -6,11 +6,22 @@ const InvariantError = require('./exceptions/InvariantError');
 const NotFoundError = require('./exceptions/NotFoundError');
 const Hapi = require('@hapi/hapi');
 const Jwt = require('@hapi/jwt');
+const Inert = require('@hapi/inert');
+const path = require('path');
 
 // albums
 const albums = require('./api/albums');
 const AlbumsService = require('./services/postgres/album/AlbumsService');
 const AlbumsValidator = require('./validator/album');
+
+// album likes
+const albumlikes = require('./api/album_likes');
+const AlbumLikesService = require('./services/postgres/albumlikes/AlbumLikesService');
+
+// albums with cover
+const albumscover = require('./api/albumscover');
+const StorageService = require('./services/storage/StorageService');
+const AlbumsCoverValidator = require('./validator/albumcover');
 
 // songs
 const songs = require('./api/songs');
@@ -33,6 +44,11 @@ const collaborations = require('./api/collaborations');
 const CollaborationsService = require('./services/postgres/Collaborations/CollaborationsService');
 const CollaborationsValidator = require('./validator/collaborations');
 
+// Exports
+const _exports = require('./api/export');
+const ProducerService = require('./services/rabbitmq/ProducerService');
+const ExportsValidator = require('./validator/export');
+
 //playlists
 const playlists = require('./api/playlists');
 const PlaylistsService = require('./services/postgres/playlists/PlaylistsService');
@@ -43,14 +59,20 @@ const playlistsongs = require('./api/playlistsongs');
 const PlaylistSongsService = require('./services/postgres/playlist_song/PlaylistSongsService')
 const PlaylistSongsValidator = require('./validator/playlist_songs');
 
+// cache
+const CacheServices = require('./services/redis/CacheServices');
+
 const init = async () => {
+  const cacheServices = new CacheServices();
   const collaborationsService = new CollaborationsService();
   const albumsService = new AlbumsService();
+  const albumLikesService = new AlbumLikesService(cacheServices);
   const songsService = new SongsService();
   const usersService = new UsersService();
   const authenticationsService = new AuthenticationsService();
   const playlistsService = new PlaylistsService();
   const playlistsongsService = new PlaylistSongsService();
+  const storageService = new StorageService(path.resolve(__dirname, 'api/albumscover/file/images'));
 
   const server = Hapi.server({
     port: process.env.PORT,
@@ -64,13 +86,19 @@ const init = async () => {
 
   // registrasi plugin eksternal
   await server.register([
+
     {
       plugin: Jwt,
     },
+
+    {
+      plugin: Inert,
+    },
+
   ]);
 
   // mendefinisikan strategy autentikasi jwt
-  server.auth.strategy('openmusicv2_jwt', 'jwt', {
+  server.auth.strategy('openmusicv3_jwt', 'jwt', {
     keys: process.env.ACCESS_TOKEN_KEY,
     verify: {
       aud: false,
@@ -92,6 +120,13 @@ const init = async () => {
       options: {
         service: albumsService,
         validator: AlbumsValidator
+      }
+    },
+
+    {
+      plugin: albumlikes,
+      options: {
+        service: albumLikesService
       }
     },
 
@@ -131,6 +166,15 @@ const init = async () => {
     },
 
     {
+      plugin: _exports,
+      options: {
+        ProducerService,
+        playlistsService,
+        validator: ExportsValidator,
+      },
+    },
+
+    {
       plugin: playlists,
       options: {
         playlistsService,
@@ -147,6 +191,15 @@ const init = async () => {
         validator: PlaylistSongsValidator,
       },
     },
+
+    {
+      plugin : albumscover,
+      options : {
+        storageService,
+        albumsService,
+        validator: AlbumsCoverValidator
+      }
+    }
 
   ]);
 

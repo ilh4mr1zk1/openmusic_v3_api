@@ -23,46 +23,19 @@ class AlbumLikesService {
       values: [id, user_id, album_id],
     };
 
-    const checkData = await this._pool.query('SELECT * FROM useralbumlikes');
+    const queryCheckDataLike = {
+      text: 'SELECT user_id, album_id FROM useralbumlikes WHERE user_id = $1 AND album_id = $2',
+      values: [user_id, album_id],
+    }
 
-    let count = 0;
+    const getDataLike = await this._pool.query(queryCheckDataLike);
 
-    if ( checkData.rowCount == 0 ) {
-
-      const result = await this._pool.query(query);
-
-      if (!result.rows[0].id) {
-        throw new InvariantError(`Album gagal disukai`);
-      }
-
-      const deleteData  = await this._cacheService.delete(`likes:${album_id}`);
-      console.log(`hapus data cache ${deleteData}`);
-      return result.rows[0].id;      
-
+    if ( getDataLike.rowCount == 1  ) {
+      throw new ClientError(`user dengan id ${user_id} dan Album dengan id ${album_id} sudah di sukai`);
     } else {
-
-      const checkDb = await this._pool.query('SELECT * FROM useralbumlikes');
-
-      console.log(checkDb.rows[0].user_id);
-
-      if ( checkDb.rows[0].user_id === user_id ) {
-
-        throw new ClientError(`user dengan id ${user_id} dan Album dengan id ${album_id} sudah di sukai`);
-
-      } else {
-
-        const result = await this._pool.query(query);
-
-        if (!result.rows[0].id) {
-          throw new InvariantError(`Album gagal disukai`);
-        }
-
-        const deleteDataFromCache =  await this._cacheService.delete(`likes:${album_id}`);
-
-        return result.rows[0].id;
-
-      }
-
+      const result = await this._pool.query(query);
+      const deleteDataCache  = await this._cacheService.delete(`likes:${album_id}`);
+      return result.rows[0].id;
     }
 
   }
